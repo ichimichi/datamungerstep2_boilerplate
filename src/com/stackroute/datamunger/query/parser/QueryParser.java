@@ -21,6 +21,12 @@ package com.stackroute.datamunger.query.parser;
  * the test cases together.
  */
 
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+
 public class QueryParser {
 
 	private QueryParameter queryParameter = new QueryParameter();
@@ -30,7 +36,14 @@ public class QueryParser {
 	 * QueryParameter class
 	 */
 	public QueryParameter parseQuery(String queryString) {
-
+		queryParameter.setBaseQuery(getBaseQuery(queryString));
+		queryParameter.setFileName(getFileName(queryString));
+		queryParameter.setOrderByFields(getOrderByFields(queryString));
+		queryParameter.setGroupByFields(getGroupByFields(queryString));
+		queryParameter.setFields(getFields(queryString));
+		queryParameter.setAggregateFunctions(getAggregateFunctions(queryString));
+		queryParameter.setRestrictions(getRestrictions(queryString));
+		queryParameter.setLogicalOperators(getLogicalOperators(queryString));
 		return queryParameter;
 	}
 
@@ -38,6 +51,9 @@ public class QueryParser {
 	 * Extract the name of the file from the query. File name can be found after the
 	 * "from" clause.
 	 */
+	public String getFileName(final String queryString) {
+		return queryString.toLowerCase(Locale.ROOT).split("\\sfrom")[1].split("\\s+")[1];
+	}
 
 	/*
 	 * 
@@ -45,6 +61,9 @@ public class QueryParser {
 	 * baseQuery from the query string. BaseQuery contains from the beginning of the
 	 * query till the where clause
 	 */
+	public String getBaseQuery(final String queryString) {
+		return queryString.toLowerCase(Locale.ROOT).split("\\swhere|\\sgroup by|\\sorder by")[0].trim();
+	}
 
 	/*
 	 * extract the order by fields from the query string. Please note that we will
@@ -53,6 +72,12 @@ public class QueryParser {
 	 * data/ipl.csv order by city from the query mentioned above, we need to extract
 	 * "city". Please note that we can have more than one order by fields.
 	 */
+	public List<String> getOrderByFields(final String queryString) {
+		if (!queryString.contains("order by")) {
+			return null;
+		}
+		return new ArrayList<>(Arrays.asList(queryString.toLowerCase(Locale.ROOT).split("\\sorder by")[1].trim().split(",")));
+	}
 
 	/*
 	 * Extract the group by fields from the query string. Please note that we will
@@ -61,6 +86,12 @@ public class QueryParser {
 	 * data/ipl.csv group by city from the query mentioned above, we need to extract
 	 * "city". Please note that we can have more than one group by fields.
 	 */
+	public List<String> getGroupByFields(final String queryString) {
+		if (!queryString.contains("group by")) {
+			return null;
+		}
+		return new ArrayList<>(Arrays.asList(queryString.toLowerCase(Locale.ROOT).split("\\sgroup by")[1].trim().split("\\sorder by")[0].trim().split(",")));
+	}
 
 	/*
 	 * Extract the selected fields from the query string. Please note that we will
@@ -70,6 +101,10 @@ public class QueryParser {
 	 * note that we might have a field containing name "from_date" or "from_hrs".
 	 * Hence, consider this while parsing.
 	 */
+	public List<String> getFields(final String queryString) {
+		return new ArrayList<>(Arrays.asList(queryString.toLowerCase(Locale.ROOT).split("select")[1].split("\\sfrom\\s")[0].trim().split(",")));
+	}
+
 
 	/*
 	 * Extract the conditions from the query string(if exists). for each condition,
@@ -85,6 +120,28 @@ public class QueryParser {
 	 * Please consider this while parsing the conditions.
 	 * 
 	 */
+	public String getConditionsPartQuery(final String queryString) {
+		if (!queryString.contains("where")) {
+			return null;
+		}
+		return queryString.split("\\swhere")[1].split("group by|order by")[0].trim();
+	}
+
+	public List<Restriction> getRestrictions(final String queryString) {
+		if (getConditionsPartQuery(queryString) == null) {
+			return null;
+		}
+		List<Restriction> restrictions = new ArrayList<>();
+		for(String restriction: getConditionsPartQuery(queryString).split("\\sor\\s|\\sand\\s")){
+			String name = restriction.split(">|<|=|!=|>=|<=")[0].trim();
+			String conditon =restriction.split("\\s|'")[1];
+			String value = restriction.split(">|<|=|!=|>=|<=")[1].replace('\'', ' ').trim();
+			restrictions.add(new Restriction(name, value,conditon));
+		}
+		return restrictions;
+	}
+
+
 
 	/*
 	 * Extract the logical operators(AND/OR) from the query, if at all it is
@@ -95,6 +152,22 @@ public class QueryParser {
 	 * The query mentioned above in the example should return a List of Strings
 	 * containing [or,and]
 	 */
+	public List<String> getLogicalOperators(final String queryString) {
+		if (getConditionsPartQuery(queryString) == null) {
+			return null;
+		}
+
+		final List<String> tempList = new ArrayList<>();
+
+		for (String token : getConditionsPartQuery(queryString).split("\\s+")) {
+			if ("and".equals(token) || "or".equals(token)) {
+				tempList.add(token);
+			}
+		}
+
+		return tempList;
+	}
+
 
 	/*
 	 * Extract the aggregate functions from the query. The presence of the aggregate
@@ -109,5 +182,23 @@ public class QueryParser {
 	 * 
 	 * 
 	 */
+	public List<AggregateFunction> getAggregateFunctions(final String queryString) {
+		final List<AggregateFunction> aggregateFunctionList = new ArrayList<>();
+
+		if (queryString.contains("count") || queryString.contains("sum") || queryString.contains("min") || queryString.contains("max") || queryString.contains("avg")) {
+			for (String field : getFields(queryString)) {
+				if (!field.contains("(")) {
+					continue;
+				}
+				String fieldName = field.split("\\(|\\)")[1];
+				String function = field.split("\\(")[0];
+				aggregateFunctionList.add(new AggregateFunction(fieldName, function));
+			}
+			return aggregateFunctionList;
+		}
+
+		return null;
+	}
+
 
 }
